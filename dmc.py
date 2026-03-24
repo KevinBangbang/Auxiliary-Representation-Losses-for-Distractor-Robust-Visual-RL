@@ -3,6 +3,7 @@
 # This source code is licensed under the MIT license found in the
 # LICENSE file in the root directory of this source tree.
 from collections import deque
+from pathlib import Path
 from typing import Any, NamedTuple
 
 import dm_env
@@ -180,7 +181,110 @@ class ExtendedTimeStepWrapper(dm_env.Environment):
         return getattr(self._env, name)
 
 
-def make(name, frame_stack, action_repeat, seed):
+class VideoBackgroundWrapper(dm_env.Environment):
+    """Replaces clean background with video frames (DMC-GB protocol).
+
+    Uses depth-based segmentation to identify background pixels and replaces
+    them with frames from natural videos (e.g. Kinetics-400 clips).
+    """
+    def __init__(self, env, video_dir, seed=0, render_height=84, render_width=84,
+                 camera_id=0):
+        self._env = env
+        self._video_dir = Path(video_dir)
+        self._rng = np.random.RandomState(seed)
+        self._render_h = render_height
+        self._render_w = render_width
+        self._camera_id = camera_id
+        self._video_files = sorted(
+            list(self._video_dir.glob('*.mp4')) +
+            list(self._video_dir.glob('*.avi'))
+        )
+        if len(self._video_files) == 0:
+            raise FileNotFoundError(
+                f"No video files found in {video_dir}. "
+                "Run: python scripts/download_kinetics.py --mode synthetic")
+        self._current_frames = None
+        self._frame_idx = 0
+
+    def _load_random_video(self):
+        """Load a random video and resize frames to render size."""
+        import cv2
+        video_path = str(self._rng.choice(self._video_files))
+        cap = cv2.VideoCapture(video_path)
+        frames = []
+        while cap.isOpened():
+            ret, frame = cap.read()
+            if not ret:
+                break
+            frame = cv2.resize(frame, (self._render_w, self._render_h))
+            frame = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
+            frames.append(frame)
+        cap.release()
+        if len(frames) == 0:
+            # Fallback: random noise frames
+            frames = [self._rng.randint(0, 256,
+                      (self._render_h, self._render_w, 3), dtype=np.uint8)
+                      for _ in range(100)]
+        return frames
+
+    def _get_background_mask(self):
+        """Get binary mask of background pixels using depth rendering."""
+        depth = self._env.physics.render(
+            height=self._render_h, width=self._render_w,
+            camera_id=self._camera_id, depth=True)
+        # Background has max/infinite depth
+        bg_mask = (depth >= depth.max() * 0.99) | (depth == 0)
+        return bg_mask
+
+    def _apply_background(self, time_step):
+        """Replace background pixels with video frame."""
+        obs_dict = time_step.observation
+        if not isinstance(obs_dict, dict) or 'pixels' not in obs_dict:
+            return time_step
+
+        pixels_obs = obs_dict['pixels'].copy()
+        if len(pixels_obs.shape) == 4:
+            pixels_obs = pixels_obs[0]
+
+        h, w = pixels_obs.shape[:2]
+
+        if self._current_frames is None:
+            self._current_frames = self._load_random_video()
+            self._frame_idx = 0
+
+        bg_frame = self._current_frames[self._frame_idx % len(self._current_frames)]
+        self._frame_idx += 1
+
+        mask = self._get_background_mask()
+        mask_3d = np.stack([mask] * 3, axis=-1)
+        pixels_obs = np.where(mask_3d, bg_frame[:h, :w], pixels_obs)
+
+        new_obs = dict(obs_dict)
+        new_obs['pixels'] = pixels_obs
+        return time_step._replace(observation=new_obs)
+
+    def reset(self):
+        time_step = self._env.reset()
+        # Load new random video on each episode
+        self._current_frames = None
+        return self._apply_background(time_step)
+
+    def step(self, action):
+        time_step = self._env.step(action)
+        return self._apply_background(time_step)
+
+    def observation_spec(self):
+        return self._env.observation_spec()
+
+    def action_spec(self):
+        return self._env.action_spec()
+
+    def __getattr__(self, name):
+        return getattr(self._env, name)
+
+
+def make(name, frame_stack, action_repeat, seed,
+         use_distractors=False, distractor_video_dir=None):
     domain, task = name.split('_', 1)
     # overwrite cup to ball_in_cup
     domain = dict(cup='ball_in_cup').get(domain, domain)
@@ -207,6 +311,11 @@ def make(name, frame_stack, action_repeat, seed):
         env = pixels.Wrapper(env,
                              pixels_only=True,
                              render_kwargs=render_kwargs)
+        # insert video background distractors after pixel rendering
+        if use_distractors and distractor_video_dir is not None:
+            env = VideoBackgroundWrapper(
+                env, distractor_video_dir, seed=seed,
+                render_height=84, render_width=84, camera_id=camera_id)
     # stack several frames
     env = FrameStackWrapper(env, frame_stack, pixels_key)
     env = ExtendedTimeStepWrapper(env)

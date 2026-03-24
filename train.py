@@ -52,11 +52,22 @@ class Workspace:
     def setup(self):
         # create logger
         self.logger = Logger(self.work_dir, use_tb=self.cfg.use_tb)
+        # resolve distractor video dir relative to original cwd (before hydra changes it)
+        distractor_video_dir = self.cfg.distractor_video_dir
+        if self.cfg.use_distractors and distractor_video_dir:
+            vid_path = Path(distractor_video_dir)
+            if not vid_path.is_absolute():
+                vid_path = Path(hydra.utils.get_original_cwd()) / vid_path
+            distractor_video_dir = str(vid_path)
         # create envs
         self.train_env = dmc.make(self.cfg.task_name, self.cfg.frame_stack,
-                                  self.cfg.action_repeat, self.cfg.seed)
+                                  self.cfg.action_repeat, self.cfg.seed,
+                                  use_distractors=self.cfg.use_distractors,
+                                  distractor_video_dir=distractor_video_dir)
         self.eval_env = dmc.make(self.cfg.task_name, self.cfg.frame_stack,
-                                 self.cfg.action_repeat, self.cfg.seed)
+                                 self.cfg.action_repeat, self.cfg.seed,
+                                 use_distractors=self.cfg.use_distractors,
+                                 distractor_video_dir=distractor_video_dir)
         # create replay buffer
         data_specs = (self.train_env.observation_spec(),
                       self.train_env.action_spec(),
@@ -200,7 +211,7 @@ class Workspace:
     def load_snapshot(self):
         snapshot = self.work_dir / 'snapshot.pt'
         with snapshot.open('rb') as f:
-            payload = torch.load(f)
+            payload = torch.load(f, weights_only=False)
         for k, v in payload.items():
             self.__dict__[k] = v
 

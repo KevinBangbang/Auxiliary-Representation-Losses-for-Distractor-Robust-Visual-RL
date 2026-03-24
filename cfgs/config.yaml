@@ -30,6 +30,16 @@ experiment: exp
 # agent
 lr: 1e-4
 feature_dim: 50
+# auxiliary losses (Modification A & B)
+use_consistency: false
+consistency_alpha: 0.1
+use_contrastive: false
+contrastive_alpha: 0.1
+contrastive_tau: 0.1
+contrastive_epsilon: 5.0
+# distractor environment
+use_distractors: false
+distractor_video_dir: './kinetics_videos'
 
 agent:
   _target_: drqv2.DrQV2Agent
@@ -45,6 +55,13 @@ agent:
   feature_dim: ${feature_dim}
   stddev_schedule: ${stddev_schedule}
   stddev_clip: 0.3
+  # auxiliary losses
+  use_consistency: ${use_consistency}
+  consistency_alpha: ${consistency_alpha}
+  use_contrastive: ${use_contrastive}
+  contrastive_alpha: ${contrastive_alpha}
+  contrastive_tau: ${contrastive_tau}
+  contrastive_epsilon: ${contrastive_epsilon}
 
 hydra:
   run:
