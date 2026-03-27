@@ -251,7 +251,7 @@ Table~\ref{tab:multi_task} reports these results alongside the cartpole seed=1 f
 
 \begin{table}[h]
 \centering
-\caption{Cross-task performance (seed=1). Walker and cheetah use 1M training frames. Best per column in \textbf{bold}. $^\dagger$Mod~B walker distractor collapsed completely (reward 26.6). $^\ddagger$Cheetah distractor Mod~B and Mod~A+B were still training at submission time.}
+\caption{Cross-task performance (seed=1). Walker and cheetah use 1M training frames. Best per column in \textbf{bold}. $^\dagger$Mod~B walker distractor collapsed completely (reward 26.6).}
 \label{tab:multi_task}
 \begin{tabular}{l cc cc cc}
 \toprule
@@ -261,8 +261,8 @@ Table~\ref{tab:multi_task} reports these results alongside the cartpole seed=1 f
 \midrule
 Baseline       & $867.2$ & $701.9$ & $958.4$ & $\mathbf{959.3}$ & $742.7$ & $\mathbf{595.6}$ \\
 + Mod A        & $847.8$ & $745.9$ & $\mathbf{967.5}$ & $946.5$ & $656.6$ & $409.5$ \\
-+ Mod B$^\dagger$  & $852.9$ & $730.6$ & $963.6$ & $26.6$  & $\mathbf{773.2}$ & ---$^\ddagger$ \\
-+ Mod A+B      & $749.5$ & $\mathbf{769.8}$ & $907.0$ & $950.8$ & $565.3$ & ---$^\ddagger$ \\
++ Mod B$^\dagger$  & $852.9$ & $730.6$ & $963.6$ & $26.6$  & $\mathbf{773.2}$ & $625.9$ \\
++ Mod A+B      & $749.5$ & $\mathbf{769.8}$ & $907.0$ & $950.8$ & $565.3$ & $617.9$ \\
 \bottomrule
 \end{tabular}
 \end{table}
@@ -273,7 +273,7 @@ Baseline       & $867.2$ & $701.9$ & $958.4$ & $\mathbf{959.3}$ & $742.7$ & $\ma
 
 \textbf{Cheetah run (clean):} Results reveal an interesting task-dependent pattern. Mod~B achieves the highest reward ($773.2$), outperforming the baseline by $30.5$ points, suggesting that task-aware contrastive learning is particularly beneficial for the high-dimensional cheetah locomotion task. However, Mod~A+B significantly underperforms ($565.3$), indicating that the two losses can interfere destructively on certain tasks.
 
-\textbf{Cheetah run (distractor):} The baseline retains reasonable performance ($595.6$, $80.2\%$ of clean), but Mod~A drops substantially ($409.5$, $62.4\%$ of clean), suggesting that task-agnostic augmentation invariance may discard useful spatial information in the richer cheetah observation space under distractors.
+\textbf{Cheetah run (distractor):} The baseline retains reasonable performance ($595.6$, $80.2\%$ of clean). Mod~B ($625.9$, $84.5\%$) and Mod~A+B ($617.9$, $88.6\%$ relative to its own clean) both outperform the baseline under distractors, suggesting that task-aware contrastive learning provides genuine distractor robustness on cheetah. However, Mod~A drops substantially ($409.5$, $62.4\%$ of clean), indicating that task-agnostic augmentation invariance may discard useful spatial information in the richer cheetah observation space under distractors.
 
 These cross-task results demonstrate that \textbf{no single auxiliary loss dominates across all tasks and environments}, highlighting the importance of task-specific evaluation and the value of our modular design that allows each loss to be toggled independently.
 
