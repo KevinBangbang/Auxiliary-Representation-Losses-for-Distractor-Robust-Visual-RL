@@ -38,11 +38,11 @@ We systematically investigate two lightweight auxiliary losses added to DrQ-v2:
 (1)~a \emph{stop-gradient consistency regularizer} (Mod~A) that encourages augmentation-invariant representations in a task-agnostic manner, and
 (2)~a \emph{task-conditional contrastive loss} (Mod~B) that groups encoder representations by Q-value similarity as a lightweight bisimulation proxy.
 We evaluate on three DMC tasks (\texttt{cartpole\_swingup}, \texttt{walker\_walk}, \texttt{cheetah\_run}) in both clean and video-distractor environments.
-On cartpole with distractors, Mod~A achieves the highest reward ($782.6 \pm 7.8$) with the smallest variance across seeds, while the combined method (A+B) attains $102\%$ performance retention.
+On cartpole with distractors, Mod~A achieves the highest reward ($782.6 \pm 7.8$) with the smallest variance across seeds and $94.4\%$ performance retention.
 However, Mod~B exhibits training instability: one out of three clean seeds collapsed, and $\alpha=0.5$ caused training failure.
 Representation analysis via CKA and t-SNE confirms that auxiliary losses produce features that are more invariant to visual distractors.
 We further demonstrate that these findings are task-dependent: on locomotion tasks (walker, cheetah), Mod~B catastrophically fails under walker distractors (reward $26.6$ vs.\ baseline $959.3$), while achieving the best clean performance on cheetah.
-Our results suggest that a zero-overhead consistency loss is the most practical and reliable improvement to DrQ-v2 under visual distribution shifts.
+Our results suggest that auxiliary losses are task-dependent: the zero-overhead consistency loss is the most practical improvement on cartpole and walker, while task-conditional contrastive learning excels on cheetah but risks catastrophic failure.
 \end{abstract}
 
 % ======================================================================
@@ -116,7 +116,7 @@ Inspired by the success of non-contrastive methods like SimSiam~\citep{chen2021e
 \end{equation}
 where $\operatorname{sg}[\cdot]$ denotes the stop-gradient operator applied to one branch and $\mathcal{T}$ is the random shift distribution.
 This loss is \textbf{task-agnostic}: it encourages representations to be invariant to the specific augmentation applied, regardless of reward structure.
-The stop-gradient on one branch prevents the trivial solution of representation collapse (mapping all inputs to a constant), as analyzed by~\citet{chen2021exploring}.
+The stop-gradient on one branch prevents the trivial solution of representation collapse (mapping all inputs to a constant). Unlike SimSiam~\citep{chen2021exploring}, we omit the predictor head; the concurrent critic gradients empirically prevent collapse, though formal justification is left to future work.
 
 \textbf{Computational cost:} One additional encoder forward pass per update step.
 No negative samples, no momentum encoder, no projection head.
@@ -129,7 +129,7 @@ We define positive pairs in a contrastive loss using the critic's Q-value estima
   \mathcal{L}_{\text{task}} = -\log \frac{\exp(\operatorname{sim}(z_i, z_j) / \tau)}{\sum_{k} \exp(\operatorname{sim}(z_i, z_k) / \tau)}, \quad (i, j) \text{ positive if } |Q(s_i, a_i) - Q(s_j, a_j)| < \epsilon,
   \label{eq:contrastive}
 \end{equation}
-where $z = \operatorname{enc}(o)$, $\operatorname{sim}(\cdot,\cdot)$ denotes cosine similarity, and $Q$ is the learned critic.
+where $z = \operatorname{enc}(o)$, $\operatorname{sim}(\cdot,\cdot)$ denotes cosine similarity, $Q$ is the learned critic, and $\sum_k$ runs over all $k \neq i$ in the mini-batch. Anchors with no positive pair (no $j$ satisfying the $\epsilon$-threshold) are skipped.
 This loss is \textbf{task-aware}: it groups states by behavioral similarity---a lightweight proxy for bisimulation~\citep{zhang2021learning}.
 States with similar Q-values (same ``behavioral role'') are pulled together regardless of visual appearance, while states with different values are pushed apart.
 This directly addresses the failure mode where augmentation-based invariance might discard spatially encoded, reward-relevant information.
@@ -260,7 +260,7 @@ Table~\ref{tab:multi_task} reports these results alongside the cartpole seed=1 f
 Baseline       & $867.2$ & $701.9$ & $958.4$ & $\mathbf{959.3}$ & $742.7$ & $\mathbf{595.6}$ \\
 + Mod A        & $847.8$ & $745.9$ & $\mathbf{967.5}$ & $946.5$ & $656.6$ & $409.5$ \\
 + Mod B$^\dagger$  & $852.9$ & $730.6$ & $963.6$ & $26.6$  & $\mathbf{773.2}$ & $625.9$ \\
-+ Mod A+B      & $749.5$ & $\mathbf{769.8}$ & $907.0$ & $950.8$ & $565.3$ & $617.9$ \\
++ Mod A+B      & $749.5$ & $\mathbf{769.8}$ & $907.0$ & $950.8$ & $705.0$ & $617.9$ \\
 \bottomrule
 \end{tabular}
 \end{table}
@@ -269,11 +269,11 @@ Baseline       & $867.2$ & $701.9$ & $958.4$ & $\mathbf{959.3}$ & $742.7$ & $\ma
 
 \textbf{Walker walk (distractor):} A striking result emerges: the baseline \emph{improves} under distractors ($959.3$ vs.\ $958.4$), suggesting walker's locomotion policy is largely invariant to background changes. Mod~A ($946.5$) and Mod~A+B ($950.8$) maintain strong performance, but \textbf{Mod~B catastrophically fails} (reward $26.6$), indicating that the contrastive loss's Q-value pairing mechanism completely breaks down under visual distractors for locomotion tasks. This is the most severe failure observed in our experiments and highlights Mod~B's fragility.
 
-\textbf{Cheetah run (clean):} Results reveal an interesting task-dependent pattern. Mod~B achieves the highest reward ($773.2$), outperforming the baseline by $30.5$ points, suggesting that task-aware contrastive learning is particularly beneficial for the high-dimensional cheetah locomotion task. However, Mod~A+B significantly underperforms ($565.3$), indicating that the two losses can interfere destructively on certain tasks.
+\textbf{Cheetah run (clean):} Results reveal an interesting task-dependent pattern. Mod~B achieves the highest reward ($773.2$), outperforming the baseline by $30.5$ points, suggesting that task-aware contrastive learning is particularly beneficial for the high-dimensional cheetah locomotion task. Mod~A+B shows a moderate drop ($705.0$), suggesting some interference between the two losses on this task.
 
-\textbf{Cheetah run (distractor):} The baseline retains reasonable performance ($595.6$, $80.2\%$ of clean). Mod~B ($625.9$, $84.5\%$) and Mod~A+B ($617.9$, $88.6\%$ relative to its own clean) both outperform the baseline under distractors, suggesting that task-aware contrastive learning provides genuine distractor robustness on cheetah. However, Mod~A drops substantially ($409.5$, $62.4\%$ of clean), indicating that task-agnostic augmentation invariance may discard useful spatial information in the richer cheetah observation space under distractors.
+\textbf{Cheetah run (distractor):} The baseline retains reasonable performance ($595.6$, $80.2\%$ of clean). Mod~B ($625.9$, $80.9\%$ of its clean) outperforms the baseline under distractors, suggesting that task-aware contrastive learning provides genuine distractor robustness on cheetah. Mod~A+B retains $87.6\%$ ($617.9$ vs.\ clean $705.0$). However, Mod~A drops substantially ($409.5$, $62.4\%$ of clean), indicating that task-agnostic augmentation invariance may discard useful spatial information in the richer cheetah observation space under distractors.
 
-These cross-task results demonstrate that \textbf{no single auxiliary loss dominates across all tasks and environments}, highlighting the importance of task-specific evaluation and the value of our modular design that allows each loss to be toggled independently.
+These single-seed cross-task results suggest that \textbf{no single auxiliary loss dominates across all tasks}, highlighting the importance of task-specific evaluation. We caution that single-seed results may not be statistically reliable.
 
 \subsection{Ablation: Loss Weight Sensitivity}
 \label{sec:alpha}
@@ -388,7 +388,7 @@ The combination nearly doubles training time, making it impractical for resource
 \paragraph{Mod~A is the recommended practical improvement.}
 Across all evaluation axes---distractor robustness, cross-seed stability, $\alpha$-sensitivity, effective rank, and computational cost---Mod~A emerges as the most practical improvement to DrQ-v2.
 It achieves the highest distractor reward with the smallest variance, is insensitive to the loss weight across two orders of magnitude, and adds zero computational overhead.
-Adding Mod~A with $\alpha=0.1$ is a ``free lunch'' for any DrQ-v2 deployment.
+On cartpole and walker, adding Mod~A with $\alpha=0.1$ is a near-zero-cost improvement, though it can hurt on cheetah where spatial information appears critical.
 
 \paragraph{The representation--performance paradox.}
 Our CKA analysis reveals a surprising disconnect: Mod~A+B produces the most distractor-invariant representations (CKA = 0.78) but does not achieve the highest reward.
@@ -421,7 +421,7 @@ Our experiments across three DMC tasks demonstrate that:
 
 \begin{enumerate}
   \item \textbf{DrQ-v2 is vulnerable to distractors}: the baseline drops ${\sim}11\%$ under video backgrounds on cartpole, confirming the vulnerability identified in our Assignment~1 analysis.
-  \item \textbf{Mod~A (consistency regularizer) is the most practical improvement}: it achieves the highest distractor reward ($782.6 \pm 7.8$), smallest variance, zero overhead, and robust $\alpha$-insensitivity. We recommend adding it to DrQ-v2 as a default.
+  \item \textbf{Mod~A (consistency regularizer) is the most practical improvement on cartpole}: it achieves the highest distractor reward ($782.6 \pm 7.8$), smallest variance, zero overhead, and robust $\alpha$-insensitivity. However, it hurts performance on cheetah distractors ($409.5$ vs.\ baseline $595.6$), indicating task-dependent applicability.
   \item \textbf{Mod~B (contrastive loss) produces the best representations but is dangerously unstable}: it yields the tightest t-SNE clusters and strong CKA scores, but 1/3 clean seeds collapse, 1/4 $\alpha$ values fail, and it catastrophically fails on walker distractors (reward $26.6$), revealing a fundamental fragility in Q-value-coupled contrastive learning.
   \item \textbf{Representation invariance $\neq$ task performance}: the combined method achieves the highest CKA (0.78) but not the highest reward, suggesting that blindly maximizing invariance is suboptimal.
 \end{enumerate}
