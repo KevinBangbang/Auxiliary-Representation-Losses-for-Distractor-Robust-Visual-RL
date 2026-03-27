@@ -54,8 +54,6 @@ This simplicity is striking because prior methods such as CURL~\citep{srinivas20
 
 However, DrQ-v2 was primarily evaluated on \emph{clean} DMC environments with uniform backgrounds.
 Our Assignment~1 analysis (Review~2, Weakness~3) identified a critical vulnerability: when the environment contains visual distractors---such as moving backgrounds, lighting changes, or video textures---random-shift augmentation alone may fail to disentangle task-relevant state information from visual noise.
-This limitation is particularly concerning for real-world deployment, where visual conditions are rarely as controlled as in standard benchmarks.
-
 This project addresses the question: \textbf{Can lightweight auxiliary representation losses improve DrQ-v2's robustness to visual distractors without sacrificing its architectural simplicity?}
 
 Our contributions are:
@@ -120,7 +118,7 @@ where $\operatorname{sg}[\cdot]$ denotes the stop-gradient operator applied to o
 This loss is \textbf{task-agnostic}: it encourages representations to be invariant to the specific augmentation applied, regardless of reward structure.
 The stop-gradient on one branch prevents the trivial solution of representation collapse (mapping all inputs to a constant), as analyzed by~\citet{chen2021exploring}.
 
-\textbf{Computational cost:} One additional encoder forward pass per update step (for the second augmented view).
+\textbf{Computational cost:} One additional encoder forward pass per update step.
 No negative samples, no momentum encoder, no projection head.
 Single hyperparameter: $\alpha_A$ (default 0.1).
 
@@ -143,7 +141,7 @@ Hyperparameters: $\alpha_B$ (default 0.1), temperature $\tau=0.1$, Q-value thres
 
 Following the DMC Generalization Benchmark~\citep{hansen2021softda}, we overlay video backgrounds onto DMC observations using depth-based segmentation from MuJoCo's depth buffer.
 Background pixels (normalized depth $> 0.99$) are replaced with video frames sampled from a library of 20 synthetically generated background videos with moving gradient patterns and dynamic noise.
-This creates a controlled but challenging visual distraction setting while maintaining identical physics and reward structure to the clean environment.
+This creates a controlled but challenging distraction setting while maintaining identical physics and reward structure.
 
 % ======================================================================
 \section{Experimental Setup}
@@ -321,22 +319,7 @@ Mod~A's superiority here explains its stable training: by explicitly encouraging
 
 \paragraph{CKA similarity.}
 Figure~\ref{fig:repr}(b) shows the cross-method CKA heatmap.
-The diagonal clean-vs-distractor CKA values directly measure representation invariance to distractors:
-
-\begin{center}
-\begin{tabular}{lc}
-\toprule
-\textbf{Method} & \textbf{CKA} (clean $\leftrightarrow$ distractor) \\
-\midrule
-Baseline & 0.54 \\
-Mod A    & 0.63 \\
-Mod B    & 0.66 \\
-Mod A+B  & \textbf{0.78} \\
-\bottomrule
-\end{tabular}
-\end{center}
-
-The combination (Mod~A+B) produces the most distractor-invariant representations (CKA = 0.78), followed by Mod~B (0.66), Mod~A (0.63), and the baseline (0.54).
+The diagonal clean-vs-distractor CKA values directly measure representation invariance to distractors: Mod~A+B achieves the highest CKA (0.78), followed by Mod~B (0.66), Mod~A (0.63), and the baseline (0.54).
 This ordering reveals a separation between \emph{representational quality} and \emph{task performance}: while Mod~A+B produces the ``best'' representations by this invariance metric, it does not achieve the highest reward, suggesting that excessive invariance may discard useful task-relevant information.
 
 \paragraph{t-SNE visualization.}
@@ -405,7 +388,7 @@ The combination nearly doubles training time, making it impractical for resource
 \paragraph{Mod~A is the recommended practical improvement.}
 Across all evaluation axes---distractor robustness, cross-seed stability, $\alpha$-sensitivity, effective rank, and computational cost---Mod~A emerges as the most practical improvement to DrQ-v2.
 It achieves the highest distractor reward with the smallest variance, is insensitive to the loss weight across two orders of magnitude, and adds zero computational overhead.
-For practitioners deploying DrQ-v2 in visually complex environments, adding Mod~A with $\alpha=0.1$ is a ``free lunch.''
+Adding Mod~A with $\alpha=0.1$ is a ``free lunch'' for any DrQ-v2 deployment.
 
 \paragraph{The representation--performance paradox.}
 Our CKA analysis reveals a surprising disconnect: Mod~A+B produces the most distractor-invariant representations (CKA = 0.78) but does not achieve the highest reward.
@@ -417,7 +400,7 @@ This finding echoes concerns raised by~\citet{zhang2021learning} about the trade
 Mod~B's instability---seed-dependent collapse in clean cartpole, non-monotonic $\alpha$-sensitivity, and catastrophic failure on walker distractors (reward $26.6$)---reveals a fundamental challenge in coupling contrastive losses with RL critics.
 The Q-value-based pairing mechanism creates a \textbf{circular dependency}: accurate positive pairs require good Q-estimates, but good Q-estimates require a well-trained encoder, which is exactly what the contrastive loss is supposed to provide.
 When this bootstrap fails (due to seed-dependent initialization, $\alpha$-induced gradient scaling, or distractor-corrupted Q-estimates), the system enters a collapse attractor.
-The walker distractor result is particularly instructive: while visual distractors \emph{stabilize} Mod~B on cartpole (all 3 seeds succeed), they \emph{destroy} it on walker, suggesting that the interaction between task complexity, observation dimensionality, and contrastive learning is highly non-trivial.
+The walker distractor result is particularly instructive: distractors \emph{stabilize} Mod~B on cartpole but \emph{destroy} it on walker, suggesting the interaction between task complexity and contrastive learning is highly non-trivial.
 
 \paragraph{No universal auxiliary loss.}
 The cross-task results (Table~\ref{tab:multi_task}) demonstrate that the optimal auxiliary loss is strongly task- and environment-dependent: Mod~A excels on walker and cartpole distractors, Mod~B excels on cheetah clean but catastrophically fails on walker distractors, and the baseline itself proves surprisingly robust on walker.
