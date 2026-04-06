@@ -58,6 +58,9 @@ python train.py "task@_global_=cartpole_swingup" use_consistency=true use_contra
 
 # With distractors
 python train.py "task@_global_=cartpole_swingup" use_distractors=true use_consistency=true
+
+# Mod B with warm-start (delay contrastive loss for 100K frames)
+python train.py "task@_global_=cartpole_swingup" use_contrastive=true contrastive_warmstart_steps=100000
 ```
 
 ## Reproduce All Experiments
@@ -88,6 +91,7 @@ python scripts/plot_experiment_results.py
 | `contrastive_alpha` | `0.1` | Mod B loss weight |
 | `contrastive_tau` | `0.1` | Temperature for InfoNCE |
 | `contrastive_epsilon` | `5.0` | Q-value threshold for positive pairs |
+| `contrastive_warmstart_steps` | `0` | Delay contrastive loss activation (frames) |
 
 ## Repository Structure
 

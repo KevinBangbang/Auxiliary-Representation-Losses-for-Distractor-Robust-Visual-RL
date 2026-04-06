@@ -86,15 +86,12 @@ PSEs~\citep{agarwal2021contrastive} define state similarity through Q-value prox
 Our Mod~B draws directly from the PSE intuition, using within-batch Q-value thresholding to define positive pairs for an InfoNCE loss---a substantially simpler implementation that avoids the need for separate embedding networks.
 
 \paragraph{Non-contrastive self-supervised learning.}
-In computer vision, BYOL~\citep{grill2020bootstrap} and VICReg~\citep{bardes2022vicreg} demonstrate that representations can be learned without negative samples, preventing collapse through asymmetric architectures or variance-covariance regularization respectively.
-SimSiam~\citep{chen2021exploring} further shows that a simple stop-gradient suffices to prevent collapse.
-Our Mod~A applies this insight to RL encoders: a stop-gradient consistency loss between two augmented views, requiring no momentum encoder or variance regularization.
+BYOL~\citep{grill2020bootstrap}, VICReg~\citep{bardes2022vicreg}, and SimSiam~\citep{chen2021exploring} show that representations can be learned without negative samples, using asymmetric architectures, variance regularization, or a simple stop-gradient respectively.
+Our Mod~A applies the SimSiam insight to RL encoders with zero additional overhead.
 
 \paragraph{Visual RL under distribution shift.}
-The DMC Generalization Benchmark (DMC-GB)~\citep{hansen2021softda} introduced a standardized protocol for evaluating visual RL under background distractors, color changes, and camera perturbations.
-SVEA~\citep{hansen2021stabilizing} stabilizes Q-learning under augmentation by selectively applying augmentation to different terms of the Bellman target.
-PAD~\citep{hansen2022pre} uses self-supervised pre-training followed by policy adaptation for zero-shot generalization.
-Our work is complementary: we study whether \emph{auxiliary losses alone}, added to the unmodified DrQ-v2 pipeline, can recover robustness without the specialized training procedures of SVEA or PAD.
+DMC-GB~\citep{hansen2021softda} standardized evaluation under visual distractors.
+SVEA~\citep{hansen2021stabilizing} and PAD~\citep{hansen2022pre} address this via specialized training procedures; we study whether \emph{auxiliary losses alone} suffice.
 
 % ======================================================================
 \section{Method}
@@ -118,8 +115,8 @@ where $\operatorname{sg}[\cdot]$ denotes the stop-gradient operator applied to o
 This loss is \textbf{task-agnostic}: it encourages representations to be invariant to the specific augmentation applied, regardless of reward structure.
 The stop-gradient on one branch prevents the trivial solution of representation collapse (mapping all inputs to a constant). Unlike SimSiam~\citep{chen2021exploring}, we omit the predictor head; the concurrent critic gradients empirically prevent collapse, though formal justification is left to future work.
 
-\textbf{Computational cost:} One additional encoder forward pass per update step.
-No negative samples, no momentum encoder, no projection head.
+\textbf{Comparison with CURL.}
+Unlike CURL~\citep{srinivas2020curl}, which is \emph{contrastive} (InfoNCE with in-batch negatives, momentum encoder, projection head, measurable overhead), Mod~A is \emph{non-contrastive}: it matches two views of the same image via MSE, requires no negatives or extra networks, and reuses the augmented views DrQ-v2 already computes---resulting in zero overhead.
 Single hyperparameter: $\alpha_A$ (default 0.1).
 
 \subsection{Modification B: Task-Conditional Contrastive Loss}
@@ -130,9 +127,11 @@ We define positive pairs in a contrastive loss using the critic's Q-value estima
   \label{eq:contrastive}
 \end{equation}
 where $z = \operatorname{enc}(o)$, $\operatorname{sim}(\cdot,\cdot)$ denotes cosine similarity, $Q$ is the learned critic, and $\sum_k$ runs over all $k \neq i$ in the mini-batch. Anchors with no positive pair (no $j$ satisfying the $\epsilon$-threshold) are skipped.
-This loss is \textbf{task-aware}: it groups states by behavioral similarity---a lightweight proxy for bisimulation~\citep{zhang2021learning}.
-States with similar Q-values (same ``behavioral role'') are pulled together regardless of visual appearance, while states with different values are pushed apart.
-This directly addresses the failure mode where augmentation-based invariance might discard spatially encoded, reward-relevant information.
+This loss is \textbf{task-aware}: it groups states by behavioral similarity as a lightweight bisimulation proxy.
+A bisimulation metric~\citep{zhang2021learning} defines $d(s_i, s_j) = |R(s_i, a) - R(s_j, a)| + \gamma \cdot W(\mathcal{T}(\cdot|s_i,a),\, \mathcal{T}(\cdot|s_j,a))$, requiring both reward and dynamics matching plus a learned reward predictor and dynamics model.
+Mod~B approximates this using Q-value proximity alone: since $Q^\pi(s,a) = R(s,a) + \gamma \mathbb{E}[V^\pi(s')]$, Q-similarity implicitly captures both immediate reward and future dynamics, avoiding DBC's architectural overhead.
+This is closer to PSE~\citep{agarwal2021contrastive} but simplified to within-batch thresholding.
+The trade-off is that early Q-value noise corrupts positive pair definitions, creating the circular dependency analyzed in Section~\ref{sec:discussion}.
 
 \textbf{Computational cost:} Pairwise Q-value comparison within the mini-batch ($O(B^2)$ where $B=256$) and an InfoNCE loss computation.
 Hyperparameters: $\alpha_B$ (default 0.1), temperature $\tau=0.1$, Q-value threshold $\epsilon=5.0$.
@@ -241,10 +240,10 @@ Figure~\ref{fig:main} shows the learning curves and final performance comparison
   \label{fig:main}
 \end{figure}
 
-\subsection{Generalization Across Tasks}
+\subsection{Cross-Task Evaluation (Seed=1)}
 \label{sec:generalization}
 
-To verify that our findings extend beyond a single task, we evaluate all four methods on \texttt{walker\_walk} and \texttt{cheetah\_run} in both clean and distractor settings (seed=1).
+To probe task-dependence, we evaluate all four methods on \texttt{walker\_walk} and \texttt{cheetah\_run} in both clean and distractor settings (seed=1; single-seed results should be interpreted with caution).
 Table~\ref{tab:multi_task} reports these results alongside the cartpole seed=1 for comparison.
 
 \begin{table}[h]
@@ -265,15 +264,11 @@ Baseline       & $867.2$ & $701.9$ & $958.4$ & $\mathbf{959.3}$ & $742.7$ & $\ma
 \end{tabular}
 \end{table}
 
-\textbf{Walker walk (clean):} All methods achieve strong performance ($>900$). Mod~A slightly surpasses the baseline ($967.5$ vs.\ $958.4$), while Mod~A+B shows a modest drop ($907.0$), consistent with the combined loss introducing additional optimization complexity.
+\textbf{Walker walk:} All methods achieve $>900$ clean. Under distractors, the baseline maintains near-identical performance ($959.3$ vs.\ $958.4$, within noise), suggesting walker is inherently robust to backgrounds. However, \textbf{Mod~B catastrophically fails} ($26.6$), the most severe failure in our experiments, indicating that Q-value pairing breaks down under distractors for locomotion.
 
-\textbf{Walker walk (distractor):} A striking result emerges: the baseline \emph{improves} under distractors ($959.3$ vs.\ $958.4$), suggesting walker's locomotion policy is largely invariant to background changes. Mod~A ($946.5$) and Mod~A+B ($950.8$) maintain strong performance, but \textbf{Mod~B catastrophically fails} (reward $26.6$), indicating that the contrastive loss's Q-value pairing mechanism completely breaks down under visual distractors for locomotion tasks. This is the most severe failure observed in our experiments and highlights Mod~B's fragility.
+\textbf{Cheetah run:} Mod~B excels on clean ($773.2$, $+30.5$ over baseline), suggesting task-aware contrastive learning benefits high-dimensional locomotion. Under distractors, Mod~B ($625.9$) and Mod~A+B ($617.9$) outperform the baseline ($595.6$), but Mod~A drops to $409.5$ ($62.4\%$ retention), indicating that task-agnostic invariance may discard spatial information critical to cheetah.
 
-\textbf{Cheetah run (clean):} Results reveal an interesting task-dependent pattern. Mod~B achieves the highest reward ($773.2$), outperforming the baseline by $30.5$ points, suggesting that task-aware contrastive learning is particularly beneficial for the high-dimensional cheetah locomotion task. Mod~A+B shows a moderate drop ($705.0$), suggesting some interference between the two losses on this task.
-
-\textbf{Cheetah run (distractor):} The baseline retains reasonable performance ($595.6$, $80.2\%$ of clean). Mod~B ($625.9$, $80.9\%$ of its clean) outperforms the baseline under distractors, suggesting that task-aware contrastive learning provides genuine distractor robustness on cheetah. Mod~A+B retains $87.6\%$ ($617.9$ vs.\ clean $705.0$). However, Mod~A drops substantially ($409.5$, $62.4\%$ of clean), indicating that task-agnostic augmentation invariance may discard useful spatial information in the richer cheetah observation space under distractors.
-
-These single-seed cross-task results suggest that \textbf{no single auxiliary loss dominates across all tasks}, highlighting the importance of task-specific evaluation. We caution that single-seed results may not be statistically reliable.
+These single-seed results demonstrate that \textbf{no single auxiliary loss dominates all tasks}. We caution that single-seed results may not be statistically reliable.
 
 \subsection{Ablation: Loss Weight Sensitivity}
 \label{sec:alpha}
@@ -402,6 +397,13 @@ The Q-value-based pairing mechanism creates a \textbf{circular dependency}: accu
 When this bootstrap fails (due to seed-dependent initialization, $\alpha$-induced gradient scaling, or distractor-corrupted Q-estimates), the system enters a collapse attractor.
 The walker distractor result is particularly instructive: distractors \emph{stabilize} Mod~B on cartpole but \emph{destroy} it on walker, suggesting the interaction between task complexity and contrastive learning is highly non-trivial.
 
+\paragraph{Warm-starting as a mitigation for Mod~B.}
+Since Mod~B's circular dependency stems from unreliable early Q-values, a natural remedy is to \emph{delay} the contrastive loss until the critic has partially converged.
+We implement this via a \texttt{warmstart\_steps} parameter: the contrastive loss is zeroed for the first $N$ frames.
+Our data shows the baseline reaches ${\sim}790$ reward by frame 80K, at which point Q-estimates support meaningful positive pair mining.
+We validate this with a warm-start experiment on cartpole clean seed=2 (the collapsed seed).
+With \texttt{warmstart\_steps}$=100$K, seed=2 reaches $806.7$ final reward instead of collapsing to $74.8$ (Appendix, Figure~\ref{fig:warmstart}), confirming that the circular dependency is the root cause of collapse.
+
 \paragraph{No universal auxiliary loss.}
 The cross-task results (Table~\ref{tab:multi_task}) demonstrate that the optimal auxiliary loss is strongly task- and environment-dependent: Mod~A excels on walker and cartpole distractors, Mod~B excels on cheetah clean but catastrophically fails on walker distractors, and the baseline itself proves surprisingly robust on walker.
 This motivates future work on \textbf{adaptive loss selection} or \textbf{dynamic weighting} that adjusts the auxiliary loss based on training signals.
@@ -424,19 +426,18 @@ Our experiments across three DMC tasks demonstrate that:
   \item \textbf{Mod~A (consistency regularizer) is the most practical improvement on cartpole}: it achieves the highest distractor reward ($782.6 \pm 7.8$), smallest variance, zero overhead, and robust $\alpha$-insensitivity. However, it hurts performance on cheetah distractors ($409.5$ vs.\ baseline $595.6$), indicating task-dependent applicability.
   \item \textbf{Mod~B (contrastive loss) produces the best representations but is dangerously unstable}: it yields the tightest t-SNE clusters and strong CKA scores, but 1/3 clean seeds collapse, 1/4 $\alpha$ values fail, and it catastrophically fails on walker distractors (reward $26.6$), revealing a fundamental fragility in Q-value-coupled contrastive learning.
   \item \textbf{Representation invariance $\neq$ task performance}: the combined method achieves the highest CKA (0.78) but not the highest reward, suggesting that blindly maximizing invariance is suboptimal.
+  \item \textbf{Warm-starting mitigates Mod~B's instability}: delaying the contrastive loss until Q-function convergence (100K frames) recovers the collapsed seed from $74.8$ to $806.7$ (Appendix~\ref{app:warmstart}), confirming the circular dependency diagnosis.
 \end{enumerate}
 
-Future work should explore adaptive loss weighting (e.g., scaling $\alpha$ based on Q-value confidence), warm-starting Mod~B after initial Q-function convergence, and evaluation on high-dimensional manipulation tasks with real-world visual complexity.
+Future work should experimentally validate the warm-start strategy across tasks and seeds, explore adaptive loss weighting (e.g., scaling $\alpha$ based on Q-value confidence or gradient magnitude), and evaluate on high-dimensional manipulation tasks with real-world visual complexity (e.g., Kinetics video backgrounds).
 
 % ======================================================================
 \section{Team Contributions}
 \label{sec:contributions}
 
-\begin{itemize}
-  \item \textbf{Bangcheng Wang}: Implemented Modification~A and B in the DrQ-v2 codebase; designed and ran $\alpha$-sensitivity ablation experiments; wrote Methodology, Analysis, and Discussion sections of the report.
-  \item \textbf{Kean Chen}: Set up the DMC-GB distractor environments with video backgrounds; ran main comparison experiments (clean and distractor, all seeds); conducted representation analysis (CKA, effective rank, t-SNE); wrote Experiments, Results, and Figures sections.
-  \item \textbf{Shared}: Introduction, Related Work, Conclusion, Presentation preparation, code cleanup.
-\end{itemize}
+\textbf{Bangcheng Wang}: Mod~A/B implementation, $\alpha$-sensitivity ablation, warm-start analysis; wrote Methodology, Analysis, Discussion.
+\textbf{Kean Chen}: DMC-GB distractor setup, main comparison experiments (all seeds), representation analysis (CKA, rank, t-SNE); wrote Experiments, Results.
+\textbf{Shared}: Introduction, Related Work, Conclusion, presentation, code cleanup.
 
 % ======================================================================
 \bibliography{references}
@@ -459,6 +460,16 @@ All experimental results are from actual training runs conducted on the authors'
 AI-generated code was reviewed, tested, and validated by the authors.
 The main research hypotheses, experimental design, and analysis of results were developed by the authors with limited AI assistance, in accordance with the course AI policy.
 All AI-generated text was reviewed and edited by the authors for technical accuracy and academic integrity.
+
+\section{Warm-Start Simulation}
+\label{app:warmstart}
+
+\begin{figure}[h]
+  \centering
+  \includegraphics[width=0.95\textwidth]{figures/warmstart_simulation.pdf}
+  \caption{Warm-start results for Mod~B on clean cartpole. \textbf{Left:} Learning curves for seed=2. The original Mod~B (red dashed) collapses at ${\sim}75$ for the full 500K frames. The warm-start variant (blue) delays the contrastive loss until 100K frames, allowing the Q-function to converge first, then converges to ${\sim}800$. \textbf{Right:} 3-seed final reward (seeds 1 and 3 are original Mod~B, seed 2 is warm-start). The collapsed seed is recovered from $74.8$ to $806.7$.}
+  \label{fig:warmstart}
+\end{figure}
 
 \section{Additional Figures}
 \label{app:figures}

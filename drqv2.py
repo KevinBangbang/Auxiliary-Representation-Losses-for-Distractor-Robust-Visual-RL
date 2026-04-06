@@ -127,7 +127,8 @@ class DrQV2Agent:
                  update_every_steps, stddev_schedule, stddev_clip, use_tb,
                  use_consistency=False, consistency_alpha=0.1,
                  use_contrastive=False, contrastive_alpha=0.1,
-                 contrastive_tau=0.1, contrastive_epsilon=5.0):
+                 contrastive_tau=0.1, contrastive_epsilon=5.0,
+                 contrastive_warmstart_steps=0):
         self.device = device
         self.critic_target_tau = critic_target_tau
         self.update_every_steps = update_every_steps
@@ -142,6 +143,7 @@ class DrQV2Agent:
         self.contrastive_alpha = contrastive_alpha
         self.contrastive_tau = contrastive_tau
         self.contrastive_epsilon = contrastive_epsilon
+        self.contrastive_warmstart_steps = contrastive_warmstart_steps
 
         # models
         self.encoder = Encoder(obs_shape).to(device)
@@ -209,14 +211,16 @@ class DrQV2Agent:
             total_loss = total_loss + self.contrastive_alpha * contrastive_loss
             if self.use_tb:
                 metrics['contrastive_loss'] = contrastive_loss.item()
+        elif self.use_contrastive and self.use_tb:
+            metrics['contrastive_loss'] = 0.0
 
         if self.use_tb:
             metrics['critic_target_q'] = target_Q.mean().item()
             metrics['critic_q1'] = Q1.mean().item()
             metrics['critic_q2'] = Q2.mean().item()
             metrics['critic_loss'] = critic_loss.item()
-            if total_loss is not critic_loss:
-                metrics['total_critic_loss'] = total_loss.item()
+            if self.use_contrastive or self.use_consistency:
+                metrics['total_critic_loss'] = total_loss.item() if total_loss is not critic_loss else critic_loss.item()
 
         # optimize encoder and critic
         self.encoder_opt.zero_grad(set_to_none=True)
@@ -326,8 +330,9 @@ class DrQV2Agent:
             next_obs = self.encoder(next_obs)
 
         # Modification B: task-conditional contrastive loss
+        # Warm-start: skip contrastive loss until Q has partially converged
         contrastive_loss = 0.0
-        if self.use_contrastive:
+        if self.use_contrastive and step >= self.contrastive_warmstart_steps:
             contrastive_loss = self.compute_contrastive_loss(obs, action)
 
         if self.use_tb:
