@@ -32,7 +32,10 @@ DMC-GB protocol: video backgrounds overlaid using MuJoCo depth-buffer segmentati
 python -m venv venv
 source venv/bin/activate  # or venv\Scripts\activate on Windows
 
-# Install dependencies
+# Install dependencies (recommended: use requirements.txt for exact versions)
+pip install -r requirements.txt
+
+# Or install manually:
 pip install torch torchvision --index-url https://download.pytorch.org/whl/cu128
 pip install mujoco dm_control hydra-core==1.3.2 omegaconf==2.3.0 \
     numpy termcolor imageio imageio-ffmpeg tb-nightly pandas matplotlib \
@@ -40,6 +43,8 @@ pip install mujoco dm_control hydra-core==1.3.2 omegaconf==2.3.0 \
 ```
 
 **Requirements:** Python 3.12+, CUDA-capable GPU, mujoco 3.x, dm_control 1.x
+
+**Reproducing results:** All experiments use deterministic seeds (1, 2, 3). Cartpole runs take ~1.5h each; walker/cheetah ~4h each on an RTX 5090 Laptop GPU.
 
 ## Quick Start
 

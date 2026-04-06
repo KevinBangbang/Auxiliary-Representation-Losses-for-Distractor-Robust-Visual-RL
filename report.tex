@@ -34,7 +34,7 @@
 \begin{abstract}
 DrQ-v2 achieves strong performance on DeepMind Control Suite (DMC) tasks using only random-shift data augmentation, without any auxiliary representation losses.
 However, its robustness to visual distractors remains underexplored.
-We systematically investigate two lightweight auxiliary losses added to DrQ-v2:
+We investigate two lightweight auxiliary losses added to DrQ-v2:
 (1)~a \emph{stop-gradient consistency regularizer} (Mod~A) that encourages augmentation-invariant representations in a task-agnostic manner, and
 (2)~a \emph{task-conditional contrastive loss} (Mod~B) that groups encoder representations by Q-value similarity as a lightweight bisimulation proxy.
 We evaluate on three DMC tasks (\texttt{cartpole\_swingup}, \texttt{walker\_walk}, \texttt{cheetah\_run}) in both clean and video-distractor environments.
@@ -42,7 +42,7 @@ On cartpole with distractors, Mod~A achieves the highest reward ($782.6 \pm 7.8$
 However, Mod~B exhibits training instability: one out of three clean seeds collapsed, and $\alpha=0.5$ caused training failure.
 Representation analysis via CKA and t-SNE confirms that auxiliary losses produce features that are more invariant to visual distractors.
 We further demonstrate that these findings are task-dependent: on locomotion tasks (walker, cheetah), Mod~B catastrophically fails under walker distractors (reward $26.6$ vs.\ baseline $959.3$), while achieving the best clean performance on cheetah.
-Our results suggest that auxiliary losses are task-dependent: the zero-overhead consistency loss is the most practical improvement on cartpole and walker, while task-conditional contrastive learning excels on cheetah but risks catastrophic failure.
+Our results suggest that auxiliary losses are task-dependent: the zero-overhead consistency loss is the most practical improvement on cartpole and walker, while task-conditional contrastive learning performs best on cheetah but risks catastrophic failure.
 \end{abstract}
 
 % ======================================================================
@@ -50,17 +50,18 @@ Our results suggest that auxiliary losses are task-dependent: the zero-overhead 
 \label{sec:intro}
 
 DrQ-v2~\citep{yarats2022mastering} demonstrates that a simple DDPG agent equipped with random-shift data augmentation and $n$-step returns can achieve state-of-the-art performance on continuous control from pixels, without auxiliary contrastive losses, momentum encoders, or prediction heads.
-This simplicity is striking because prior methods such as CURL~\citep{srinivas2020curl} and SPR~\citep{schwarzer2021data} argued that explicit representation learning objectives are necessary for sample-efficient visual reinforcement learning (RL).
+This is notable because prior methods such as CURL~\citep{srinivas2020curl} and SPR~\citep{schwarzer2021data} argued that explicit representation learning objectives are necessary for sample-efficient visual reinforcement learning (RL).
 
 However, DrQ-v2 was primarily evaluated on \emph{clean} DMC environments with uniform backgrounds.
-Our Assignment~1 analysis (Review~2, Weakness~3) identified a critical vulnerability: when the environment contains visual distractors---such as moving backgrounds, lighting changes, or video textures---random-shift augmentation alone may fail to disentangle task-relevant state information from visual noise.
+Our Assignment~1 analysis (Review~2, Weakness~3) identified a vulnerability: when the environment contains visual distractors---such as moving backgrounds, lighting changes, or video textures---random-shift augmentation alone may fail to disentangle task-relevant state information from visual noise.
+The severity of this vulnerability is task-dependent and unpredictable a priori: cartpole drops ${\sim}11\%$ under distractors while walker is unaffected, making it unclear when auxiliary losses are needed and when they might hurt.
 This project addresses the question: \textbf{Can lightweight auxiliary representation losses improve DrQ-v2's robustness to visual distractors without sacrificing its architectural simplicity?}
 
 Our contributions are:
 \begin{enumerate}
-  \item \textbf{Stress-testing DrQ-v2} under video-background distractors following the DMC Generalization Benchmark (DMC-GB) protocol~\citep{hansen2021softda}, quantifying an ${\sim}11\%$ performance drop on cartpole and demonstrating task-dependent vulnerability patterns across three environments.
-  \item \textbf{Proposing and evaluating two auxiliary losses}: a task-agnostic consistency regularizer (Mod~A) derived from our A1 DrQ-v2 review, and a task-aware contrastive loss (Mod~B) inspired by our A1 CURL review, both requiring only a loss term addition and no architectural changes.
-  \item \textbf{Deep representation analysis} via effective rank, centered kernel alignment (CKA), and t-SNE visualization, providing mechanistic insights into \emph{why} Mod~A succeeds as a robust, zero-overhead improvement while Mod~B offers representational advantages at the cost of training instability.
+  \item \textbf{Empirical characterization of task-dependent distractor vulnerability} in DrQ-v2 across three DMC tasks, revealing that the impact ranges from ${\sim}11\%$ degradation (cartpole) to near-zero (walker), following the DMC-GB protocol~\citep{hansen2021softda}.
+  \item \textbf{Diagnosis of when and why auxiliary losses help or fail}: a task-agnostic consistency loss (Mod~A) is a reliable zero-overhead improvement on cartpole and walker, while a task-aware contrastive loss (Mod~B) produces better representations but suffers from a circular dependency between Q-estimates and positive pair mining, causing seed-dependent collapse and catastrophic failure on walker distractors.
+  \item \textbf{Mechanistic analysis via representation probes} (effective rank, CKA, t-SNE) uncovering a representation-performance paradox: the most distractor-invariant encoder (highest CKA) does not yield the highest reward, and a warm-start strategy that delays contrastive loss activation eliminates Mod~B's collapse.
 \end{enumerate}
 
 % ======================================================================
@@ -71,19 +72,19 @@ Our contributions are:
 RAD~\citep{laskin2020reinforcement} first demonstrated that simple image transformations (crop, translate, color jitter) are sufficient for pixel-based RL without architectural modifications.
 DrQ~\citep{kostrikov2021image} formalized this insight by applying random shifts as a regularizer on both the Q-function and its target, achieving strong performance on the DMC benchmark.
 DrQ-v2~\citep{yarats2022mastering} further simplified the pipeline by removing all auxiliary objectives and switching from SAC to DDPG with $n$-step returns, yet it was not systematically evaluated under visual distribution shifts.
-Our work directly addresses this gap.
+We fill this gap.
 
 \paragraph{Contrastive and self-predictive representations.}
 CURL~\citep{srinivas2020curl} applies InfoNCE contrastive learning~\citep{oord2018representation} to learn visual representations for RL, using augmented views as positive pairs and other batch elements as negatives.
 SPR~\citep{schwarzer2021data} learns self-predictive representations over multiple future time steps, requiring a transition model and projection head.
 ATC~\citep{stooke2021decoupling} decouples representation learning from policy optimization through a temporal contrastive objective.
-While effective, these methods introduce substantial architectural complexity (momentum encoders, prediction networks, additional forward passes).
+While effective, these methods introduce architectural complexity (momentum encoders, prediction networks, additional forward passes).
 Our Mod~A achieves comparable representational benefits with zero overhead.
 
 \paragraph{Task-aware and bisimulation-based representations.}
 DBC~\citep{zhang2021learning} uses bisimulation metrics to learn representations that are invariant to task-irrelevant features, requiring an explicit reward predictor and dynamics model.
 PSEs~\citep{agarwal2021contrastive} define state similarity through Q-value proximity, learning embeddings where states with similar values are nearby in representation space.
-Our Mod~B draws directly from the PSE intuition, using within-batch Q-value thresholding to define positive pairs for an InfoNCE loss---a substantially simpler implementation that avoids the need for separate embedding networks.
+Our Mod~B draws directly from the PSE intuition, using within-batch Q-value thresholding to define positive pairs for an InfoNCE loss---a simpler implementation that avoids the need for separate embedding networks.
 
 \paragraph{Non-contrastive self-supervised learning.}
 BYOL~\citep{grill2020bootstrap}, VICReg~\citep{bardes2022vicreg}, and SimSiam~\citep{chen2021exploring} show that representations can be learned without negative samples, using asymmetric architectures, variance regularization, or a simple stop-gradient respectively.
@@ -106,7 +107,7 @@ Only an auxiliary loss term $\alpha \cdot \mathcal{L}_{\text{aux}}$ is added to 
 
 \subsection{Modification A: Stop-Gradient Consistency Regularizer}
 
-Inspired by the success of non-contrastive methods like SimSiam~\citep{chen2021exploring}, we add a representation consistency loss between two independently augmented views of the same observation:
+Following non-contrastive methods like SimSiam~\citep{chen2021exploring}, we add a representation consistency loss between two independently augmented views of the same observation:
 \begin{equation}
   \mathcal{L}_{\text{consistency}} = \mathbb{E}_{o \sim \mathcal{B},\; f_1, f_2 \sim \mathcal{T}} \left[\left\| \operatorname{sg}[\operatorname{enc}(f_1(o))] - \operatorname{enc}(f_2(o)) \right\|_2^2 \right],
   \label{eq:consistency}
@@ -115,8 +116,10 @@ where $\operatorname{sg}[\cdot]$ denotes the stop-gradient operator applied to o
 This loss is \textbf{task-agnostic}: it encourages representations to be invariant to the specific augmentation applied, regardless of reward structure.
 The stop-gradient on one branch prevents the trivial solution of representation collapse (mapping all inputs to a constant). Unlike SimSiam~\citep{chen2021exploring}, we omit the predictor head; the concurrent critic gradients empirically prevent collapse, though formal justification is left to future work.
 
-\textbf{Comparison with CURL.}
-Unlike CURL~\citep{srinivas2020curl}, which is \emph{contrastive} (InfoNCE with in-batch negatives, momentum encoder, projection head, measurable overhead), Mod~A is \emph{non-contrastive}: it matches two views of the same image via MSE, requires no negatives or extra networks, and reuses the augmented views DrQ-v2 already computes---resulting in zero overhead.
+We choose a non-contrastive design over CURL~\citep{srinivas2020curl} for a specific reason: DrQ-v2 already computes two augmented views per update (one for actor, one for critic), so Mod~A can reuse these views at zero cost.
+CURL, by contrast, requires a momentum encoder, a projection head, and InfoNCE over in-batch negatives, adding both parameters and compute.
+More importantly, CURL defines positives by augmentation identity (same image, different crop), which is exactly what random-shift already teaches the encoder.
+Mod~A instead enforces consistency at the \emph{representation} level via MSE, providing a complementary signal that random-shift alone does not give: explicit invariance in the 50-dimensional latent space, not just at the pixel level.
 Single hyperparameter: $\alpha_A$ (default 0.1).
 
 \subsection{Modification B: Task-Conditional Contrastive Loss}
@@ -202,19 +205,16 @@ DrQ-v2 (baseline)       & $\mathbf{839.0 \pm 26.8}$ & $746.9 \pm 39.0$ & $89.0$ 
 \end{tabular}
 \end{table}
 
-\textbf{Baseline vulnerability confirmed.}
 DrQ-v2's performance drops from $839.0$ to $746.9$ ($-11.0\%$) under video distractors, confirming the vulnerability hypothesized in our proposal.
 
-\textbf{Mod~A is the most effective and stable method.}
-It achieves the highest distractor reward ($782.6$) with the \emph{smallest cross-seed variance} ($\pm 7.8$), and the highest retention ($94.4\%$).
+Mod~A achieves the highest distractor reward ($782.6$) with the smallest cross-seed variance ($\pm 7.8$) and the highest retention ($94.4\%$).
 A Welch's $t$-test comparing Mod~A vs.\ baseline distractor rewards yields $p=0.32$ (not significant at $\alpha_{\text{stat}}=0.05$), but the Cohen's $d$ effect size is $1.27$ (large), indicating a practically meaningful improvement that is underpowered due to only 3 seeds.
-In the clean setting, it closely matches the baseline ($829.3$ vs.\ $839.0$), indicating no meaningful trade-off.
+In the clean setting, it closely matches the baseline ($829.3$ vs.\ $839.0$), with no meaningful trade-off.
 
-\textbf{Mod~A+B also improves robustness} ($93.9\%$ retention, $764.5$ distractor reward) but introduces higher variance and moderate clean-environment cost ($813.8$ vs.\ $839.0$).
+Mod~A+B also improves robustness ($93.9\%$ retention, $764.5$ distractor reward) but introduces higher variance and moderate clean-environment cost ($813.8$ vs.\ $839.0$).
 
-\textbf{Mod~B is unstable in clean environments.}
-Two of three clean seeds achieve strong performance ($852.9$, $797.9$), but seed~2 collapses to $74.8$, producing extreme variance ($\pm 354.5$).
-Remarkably, all three distractor seeds perform well ($751.5 \pm 29.6$), suggesting that the distractor environment provides implicit regularization that prevents the collapse observed in the clean setting.
+Mod~B is unstable in clean environments: two of three seeds achieve strong performance ($852.9$, $797.9$), but seed~2 collapses to $74.8$, producing extreme variance ($\pm 354.5$).
+All three distractor seeds perform well ($751.5 \pm 29.6$); the distractor environment may provide implicit regularization that prevents the collapse observed in the clean setting.
 We analyze this instability further in Section~\ref{sec:alpha}.
 
 Figure~\ref{fig:main} shows the learning curves and final performance comparison.
@@ -248,7 +248,7 @@ Table~\ref{tab:multi_task} reports these results alongside the cartpole seed=1 f
 
 \begin{table}[h]
 \centering
-\caption{Cross-task performance (seed=1). Walker and cheetah use 1M training frames. Best per column in \textbf{bold}. $^\dagger$Mod~B walker distractor collapsed completely (reward 26.6).}
+\caption{Cross-task performance. Walker and cheetah use 1M frames. Most cells are seed=1 (single-seed, no bold). $^\dagger$Mod~B walker distractor collapsed (reward 26.6). $^\ddagger$Cheetah distractor baseline is 3-seed mean $\pm$ std.}
 \label{tab:multi_task}
 \begin{tabular}{l cc cc cc}
 \toprule
@@ -256,19 +256,19 @@ Table~\ref{tab:multi_task} reports these results alongside the cartpole seed=1 f
 \cmidrule(lr){2-3} \cmidrule(lr){4-5} \cmidrule(lr){6-7}
 \textbf{Method} & Clean & Dist. & Clean & Dist. & Clean & Dist. \\
 \midrule
-Baseline       & $867.2$ & $701.9$ & $958.4$ & $\mathbf{959.3}$ & $742.7$ & $\mathbf{595.6}$ \\
-+ Mod A        & $847.8$ & $745.9$ & $\mathbf{967.5}$ & $946.5$ & $656.6$ & $409.5$ \\
-+ Mod B$^\dagger$  & $852.9$ & $730.6$ & $963.6$ & $26.6$  & $\mathbf{773.2}$ & $625.9$ \\
-+ Mod A+B      & $749.5$ & $\mathbf{769.8}$ & $907.0$ & $950.8$ & $705.0$ & $617.9$ \\
+Baseline       & $867.2$ & $701.9$ & $958.4$ & $959.3$ & $742.7$ & $611.2 \pm 4.3^\ddagger$ \\
++ Mod A        & $847.8$ & $745.9$ & $967.5$ & $946.5$ & $656.6$ & $409.5$ \\
++ Mod B$^\dagger$  & $852.9$ & $730.6$ & $963.6$ & $26.6$  & $773.2$ & $625.9$ \\
++ Mod A+B      & $749.5$ & $769.8$ & $907.0$ & $950.8$ & $705.0$ & $617.9$ \\
 \bottomrule
 \end{tabular}
 \end{table}
 
-\textbf{Walker walk:} All methods achieve $>900$ clean. Under distractors, the baseline maintains near-identical performance ($959.3$ vs.\ $958.4$, within noise), suggesting walker is inherently robust to backgrounds. However, \textbf{Mod~B catastrophically fails} ($26.6$), the most severe failure in our experiments, indicating that Q-value pairing breaks down under distractors for locomotion.
+On walker, all methods achieve $>900$ clean. Under distractors, the baseline maintains near-identical performance ($959.3$ vs.\ $958.4$, within noise), so walker appears inherently robust to backgrounds. However, Mod~B catastrophically fails ($26.6$), the most severe failure in our experiments; Q-value pairing breaks down under distractors for locomotion.
 
-\textbf{Cheetah run:} Mod~B excels on clean ($773.2$, $+30.5$ over baseline), suggesting task-aware contrastive learning benefits high-dimensional locomotion. Under distractors, Mod~B ($625.9$) and Mod~A+B ($617.9$) outperform the baseline ($595.6$), but Mod~A drops to $409.5$ ($62.4\%$ retention), indicating that task-agnostic invariance may discard spatial information critical to cheetah.
+On cheetah, Mod~B performs best on clean ($773.2$, $+30.5$ over baseline), so task-aware contrastive learning benefits high-dimensional locomotion. Under distractors, where the baseline averages $611.2 \pm 4.3$ across 3 seeds, Mod~B ($625.9$) and Mod~A+B ($617.9$) are comparable, but Mod~A drops to $409.5$ ($62.4\%$ retention), which suggests task-agnostic invariance may discard spatial information critical to cheetah.
 
-These single-seed results demonstrate that \textbf{no single auxiliary loss dominates all tasks}. We caution that single-seed results may not be statistically reliable.
+These single-seed results demonstrate that no single auxiliary loss dominates all tasks. We caution that single-seed results may not be statistically reliable.
 
 \subsection{Ablation: Loss Weight Sensitivity}
 \label{sec:alpha}
@@ -290,37 +290,32 @@ Figure~\ref{fig:alpha} shows the results.
   \label{fig:alpha}
 \end{figure}
 
-\textbf{Mod~A is remarkably insensitive to $\alpha$.}
-All four values produce final rewards between 800 and 824, spanning two orders of magnitude ($0.01$ to $1.0$).
-This robustness makes Mod~A practical to deploy without extensive hyperparameter tuning.
+For Mod~A, all four $\alpha$ values produce final rewards between 800 and 824, spanning two orders of magnitude ($0.01$ to $1.0$).
+This makes Mod~A practical to deploy without hyperparameter tuning.
 
-\textbf{Mod~B exhibits non-monotonic instability.}
-While $\alpha \in \{0.01, 0.1, 1.0\}$ all achieve strong performance ($811{-}850$), $\alpha=0.5$ causes complete training collapse (final reward $277$).
+Mod~B, by contrast, exhibits non-monotonic instability: $\alpha \in \{0.01, 0.1, 1.0\}$ all achieve strong performance ($811{-}850$), but $\alpha=0.5$ causes complete training collapse (final reward $277$).
 This non-monotonic failure is notable: it is not the case that ``larger $\alpha$ hurts more.''
-We hypothesize that at $\alpha=0.5$, the contrastive gradient magnitude creates a destructive resonance with the critic loss gradients during the critical early-training phase when Q-estimates are noisy and the positive-pair threshold $\epsilon$ is poorly calibrated relative to the Q-value scale.
+We hypothesize that at $\alpha=0.5$, the contrastive gradient magnitude interferes destructively with the critic loss gradients during the critical early-training phase when Q-estimates are noisy and the positive-pair threshold $\epsilon$ is poorly calibrated relative to the Q-value scale.
 
-Combined with the seed-dependent collapse in the main experiments (Section~\ref{sec:results}), this analysis reveals a \textbf{fundamental fragility in task-conditional contrastive losses for RL}: the Q-value-based pairing mechanism introduces a feedback loop where noisy Q-estimates produce noisy positive pairs, which degrade the encoder, which in turn degrades the Q-estimates further.
+Combined with the seed-dependent collapse in the main experiments (Section~\ref{sec:results}), this analysis reveals a fragility in task-conditional contrastive losses for RL: the Q-value-based pairing mechanism introduces a feedback loop where noisy Q-estimates produce noisy positive pairs, which degrade the encoder, which in turn degrades the Q-estimates further.
 
 \subsection{Representation Analysis}
 \label{sec:repr}
 
 We extract encoder features from all eight trained agents (4 methods $\times$ \{clean, distractor\}, cartpole, seed=1).
 
-\paragraph{Effective rank.}
 Figure~\ref{fig:repr}(a) shows the effective rank of encoder representations.
 Mod~A achieves the highest rank (22.5), followed by Mod~B (21.2), baseline (20.2), and Mod~A+B (19.8).
 Higher effective rank indicates fuller utilization of the representation dimensions, reducing the risk of dimensional collapse~\citep{kumar2020implicit}.
-Mod~A's superiority here explains its stable training: by explicitly encouraging invariance across augmentations, it forces the encoder to distribute information across more dimensions.
+Mod~A's high rank explains its stable training: by encouraging invariance across augmentations, it forces the encoder to distribute information across more dimensions.
 
-\paragraph{CKA similarity.}
-Figure~\ref{fig:repr}(b) shows the cross-method CKA heatmap.
-The diagonal clean-vs-distractor CKA values directly measure representation invariance to distractors: Mod~A+B achieves the highest CKA (0.78), followed by Mod~B (0.66), Mod~A (0.63), and the baseline (0.54).
-This ordering reveals a separation between \emph{representational quality} and \emph{task performance}: while Mod~A+B produces the ``best'' representations by this invariance metric, it does not achieve the highest reward, suggesting that excessive invariance may discard useful task-relevant information.
+Figure~\ref{fig:repr}(b) shows cross-method CKA similarity.
+The diagonal clean-vs-distractor CKA values measure representation invariance to distractors: Mod~A+B achieves the highest CKA (0.78), followed by Mod~B (0.66), Mod~A (0.63), and the baseline (0.54).
+This ordering reveals a separation between representational quality and task performance: while Mod~A+B produces the most invariant representations, it does not achieve the highest reward; excessive invariance may discard useful task-relevant information.
 
-\paragraph{t-SNE visualization.}
 Figure~\ref{fig:tsne} shows t-SNE projections colored by episode return.
-The baseline distractor plot shows a wide return spread (770--855) with scattered clusters, indicating inconsistent behavior.
-In contrast, Mod~B distractor exhibits a tight return range (790--796) with well-organized structure, demonstrating that the task-conditional contrastive loss produces the most \emph{behaviorally coherent} representations---even though it suffers from training instability.
+The baseline distractor plot shows a wide return spread (770--855) with scattered clusters.
+Mod~B distractor, by contrast, exhibits a tight return range (790--796) with well-organized structure, showing that the task-conditional contrastive loss produces the most behaviorally coherent representations, even though it suffers from training instability.
 
 \begin{figure}[h]
   \centering
@@ -371,7 +366,7 @@ Baseline       & 48.3  & ---     \\
 \end{tabular}
 \end{table}
 
-Mod~A adds \textbf{zero overhead} (the 2.5ms speedup is within measurement noise, likely due to GPU batching effects).
+Mod~A adds zero overhead (the 2.5ms speedup is within measurement noise, likely due to GPU batching effects).
 This is because DrQ-v2 already computes two augmented views for the actor and critic updates; Mod~A reuses one of these and only adds an MSE loss computation.
 Mod~B adds $25\%$ overhead from pairwise Q-value comparison and InfoNCE computation.
 The combination nearly doubles training time, making it impractical for resource-constrained settings.
@@ -381,21 +376,22 @@ The combination nearly doubles training time, making it impractical for resource
 \label{sec:discussion}
 
 \paragraph{Mod~A is the recommended practical improvement.}
-Across all evaluation axes---distractor robustness, cross-seed stability, $\alpha$-sensitivity, effective rank, and computational cost---Mod~A emerges as the most practical improvement to DrQ-v2.
+Across all evaluation axes (distractor robustness, cross-seed stability, $\alpha$-sensitivity, effective rank, and computational cost), Mod~A is the most practical improvement to DrQ-v2.
 It achieves the highest distractor reward with the smallest variance, is insensitive to the loss weight across two orders of magnitude, and adds zero computational overhead.
 On cartpole and walker, adding Mod~A with $\alpha=0.1$ is a near-zero-cost improvement, though it can hurt on cheetah where spatial information appears critical.
 
 \paragraph{The representation--performance paradox.}
-Our CKA analysis reveals a surprising disconnect: Mod~A+B produces the most distractor-invariant representations (CKA = 0.78) but does not achieve the highest reward.
-This suggests that \textbf{representation invariance and task performance are not monotonically related}.
+Our CKA analysis shows a disconnect: Mod~A+B produces the most distractor-invariant representations (CKA = 0.78) but does not achieve the highest reward.
+This suggests that representation invariance and task performance are not monotonically related.
 Excessive invariance may discard task-relevant spatial information that the critic needs.
-This finding echoes concerns raised by~\citet{zhang2021learning} about the trade-off between invariance and informativeness in bisimulation-based methods.
+\citet{zhang2021learning} noted a similar trade-off between invariance and informativeness in bisimulation-based methods.
 
 \paragraph{Task-conditional contrastive losses are fragile in RL.}
-Mod~B's instability---seed-dependent collapse in clean cartpole, non-monotonic $\alpha$-sensitivity, and catastrophic failure on walker distractors (reward $26.6$)---reveals a fundamental challenge in coupling contrastive losses with RL critics.
+Mod~B's instability---seed-dependent collapse in clean cartpole, non-monotonic $\alpha$-sensitivity, and catastrophic failure on walker distractors (reward $26.6$)---reveals a challenge in coupling contrastive losses with RL critics.
 The Q-value-based pairing mechanism creates a \textbf{circular dependency}: accurate positive pairs require good Q-estimates, but good Q-estimates require a well-trained encoder, which is exactly what the contrastive loss is supposed to provide.
 When this bootstrap fails (due to seed-dependent initialization, $\alpha$-induced gradient scaling, or distractor-corrupted Q-estimates), the system enters a collapse attractor.
-The walker distractor result is particularly instructive: distractors \emph{stabilize} Mod~B on cartpole but \emph{destroy} it on walker, suggesting the interaction between task complexity and contrastive learning is highly non-trivial.
+The walker distractor result illustrates this: distractors \emph{stabilize} Mod~B on cartpole but \emph{destroy} it on walker.
+Additional seeds confirm the pattern: walker distractor Mod~B seed=3 also collapses ($22.4$), and even Mod~A+B seed=3 collapses ($27.5$), showing that any method incorporating the contrastive loss is at risk on this task.
 
 \paragraph{Warm-starting as a mitigation for Mod~B.}
 Since Mod~B's circular dependency stems from unreliable early Q-values, a natural remedy is to \emph{delay} the contrastive loss until the critic has partially converged.
@@ -405,7 +401,7 @@ We validate this with a warm-start experiment on cartpole clean seed=2 (the coll
 With \texttt{warmstart\_steps}$=100$K, seed=2 reaches $806.7$ final reward instead of collapsing to $74.8$ (Appendix, Figure~\ref{fig:warmstart}), confirming that the circular dependency is the root cause of collapse.
 
 \paragraph{No universal auxiliary loss.}
-The cross-task results (Table~\ref{tab:multi_task}) demonstrate that the optimal auxiliary loss is strongly task- and environment-dependent: Mod~A excels on walker and cartpole distractors, Mod~B excels on cheetah clean but catastrophically fails on walker distractors, and the baseline itself proves surprisingly robust on walker.
+The cross-task results (Table~\ref{tab:multi_task}) demonstrate that the optimal auxiliary loss is strongly task- and environment-dependent: Mod~A performs best on walker and cartpole distractors, Mod~B performs best on cheetah clean but catastrophically fails on walker distractors, and the baseline itself proves surprisingly robust on walker.
 This motivates future work on \textbf{adaptive loss selection} or \textbf{dynamic weighting} that adjusts the auxiliary loss based on training signals.
 
 \paragraph{Limitations.}
@@ -418,14 +414,14 @@ This motivates future work on \textbf{adaptive loss selection} or \textbf{dynami
 \section{Conclusion}
 \label{sec:conclusion}
 
-We presented a systematic evaluation of two lightweight auxiliary representation losses for improving DrQ-v2's robustness to visual distractors.
+We evaluated two lightweight auxiliary representation losses for improving DrQ-v2's robustness to visual distractors.
 Our experiments across three DMC tasks demonstrate that:
 
 \begin{enumerate}
   \item \textbf{DrQ-v2 is vulnerable to distractors}: the baseline drops ${\sim}11\%$ under video backgrounds on cartpole, confirming the vulnerability identified in our Assignment~1 analysis.
-  \item \textbf{Mod~A (consistency regularizer) is the most practical improvement on cartpole}: it achieves the highest distractor reward ($782.6 \pm 7.8$), smallest variance, zero overhead, and robust $\alpha$-insensitivity. However, it hurts performance on cheetah distractors ($409.5$ vs.\ baseline $595.6$), indicating task-dependent applicability.
-  \item \textbf{Mod~B (contrastive loss) produces the best representations but is dangerously unstable}: it yields the tightest t-SNE clusters and strong CKA scores, but 1/3 clean seeds collapse, 1/4 $\alpha$ values fail, and it catastrophically fails on walker distractors (reward $26.6$), revealing a fundamental fragility in Q-value-coupled contrastive learning.
-  \item \textbf{Representation invariance $\neq$ task performance}: the combined method achieves the highest CKA (0.78) but not the highest reward, suggesting that blindly maximizing invariance is suboptimal.
+  \item \textbf{Mod~A (consistency regularizer) is the most practical improvement on cartpole}: it achieves the highest distractor reward ($782.6 \pm 7.8$), smallest variance, zero overhead, and robust $\alpha$-insensitivity. However, it hurts performance on cheetah distractors ($409.5$ vs.\ baseline $595.6$), a sign of task-dependent applicability.
+  \item \textbf{Mod~B (contrastive loss) produces the best representations but is dangerously unstable}: it yields the tightest t-SNE clusters and strong CKA scores, but 1/3 clean seeds collapse, 1/4 $\alpha$ values fail, and it catastrophically fails on walker distractors (reward $26.6$), revealing a fragility in Q-value-coupled contrastive learning.
+  \item \textbf{Representation invariance $\neq$ task performance}: the combined method achieves the highest CKA (0.78) but not the highest reward; blindly maximizing invariance is suboptimal.
   \item \textbf{Warm-starting mitigates Mod~B's instability}: delaying the contrastive loss until Q-function convergence (100K frames) recovers the collapsed seed from $74.8$ to $806.7$ (Appendix~\ref{app:warmstart}), confirming the circular dependency diagnosis.
 \end{enumerate}
 
@@ -440,6 +436,7 @@ Future work should experimentally validate the warm-start strategy across tasks 
 \textbf{Shared}: Introduction, Related Work, Conclusion, presentation, code cleanup.
 
 % ======================================================================
+\newpage
 \bibliography{references}
 \bibliographystyle{plainnat}
 
@@ -469,35 +466,6 @@ All AI-generated text was reviewed and edited by the authors for technical accur
   \includegraphics[width=0.95\textwidth]{figures/warmstart_simulation.pdf}
   \caption{Warm-start results for Mod~B on clean cartpole. \textbf{Left:} Learning curves for seed=2. The original Mod~B (red dashed) collapses at ${\sim}75$ for the full 500K frames. The warm-start variant (blue) delays the contrastive loss until 100K frames, allowing the Q-function to converge first, then converges to ${\sim}800$. \textbf{Right:} 3-seed final reward (seeds 1 and 3 are original Mod~B, seed 2 is warm-start). The collapsed seed is recovered from $74.8$ to $806.7$.}
   \label{fig:warmstart}
-\end{figure}
-
-\section{Additional Figures}
-\label{app:figures}
-
-\begin{figure}[h]
-  \centering
-  \begin{subfigure}[t]{0.48\textwidth}
-    \includegraphics[width=\textwidth]{figures/fig2_clean_curves.pdf}
-    \caption{Clean environment learning curves (3 seeds). All methods converge to similar performance, with Mod~B showing higher variance due to one collapsed seed.}
-  \end{subfigure}\hfill
-  \begin{subfigure}[t]{0.48\textwidth}
-    \includegraphics[width=\textwidth]{figures/fig6_clean_vs_distractor.pdf}
-    \caption{Direct clean vs.\ distractor comparison for each method. Mod~A shows the smallest gap; baseline shows the largest.}
-  \end{subfigure}
-  \caption{Additional cartpole swingup results.}
-\end{figure}
-
-\begin{figure}[h]
-  \centering
-  \begin{subfigure}[t]{0.48\textwidth}
-    \includegraphics[width=\textwidth]{figures/tsne_cartpole_swingup_modA_distractor.pdf}
-    \caption{Mod~A (distractor)}
-  \end{subfigure}\hfill
-  \begin{subfigure}[t]{0.48\textwidth}
-    \includegraphics[width=\textwidth]{figures/tsne_cartpole_swingup_modAB_distractor.pdf}
-    \caption{Mod~A+B (distractor)}
-  \end{subfigure}
-  \caption{Additional t-SNE visualizations under distractors (cartpole, seed=1).}
 \end{figure}
 
 \end{document}
