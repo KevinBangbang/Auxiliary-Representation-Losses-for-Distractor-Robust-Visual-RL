@@ -13,3 +13,9 @@ dmc_benchmarks.py
 check_sweep.py
 cancel_sweep.py
 .hydra/
+
+# Claude Code / IDE
+.claude/
+.cozy/
+*.log
+progress.txt
